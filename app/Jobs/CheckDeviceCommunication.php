@@ -2,7 +2,7 @@
 
 namespace App\Jobs;
 
-use App\Services\DeviceMonitor;
+use App\Models\Device;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 
@@ -10,19 +10,22 @@ class CheckDeviceCommunication implements ShouldQueue
 {
     use Queueable;
 
-    public int $tries = 3;
-
-    public int $timeout = 10;
-
     public function __construct(public int $deviceId) {}
 
-    public function backoff(): array
+    public function handle(): void
     {
-        return [2, 5];
-    }
+        // This method runs when the worker picks up the job, not when we dispatch it.
+        $device = Device::findOrFail($this->deviceId);
 
-    public function handle(DeviceMonitor $monitor): void
-    {
-        $monitor->check($this->deviceId);
+        if ($device->last_seen_at === null) {
+            $device->status = 'unknown';
+        } elseif ($device->last_seen_at->addSeconds(30)->isPast()) {
+            $device->status = 'offline';
+        } else {
+            $device->status = 'online';
+        }
+
+        $device->last_checked_at = now();
+        $device->save();
     }
 }

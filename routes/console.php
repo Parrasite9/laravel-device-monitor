@@ -2,40 +2,38 @@
 
 use App\Jobs\CheckDeviceCommunication;
 use App\Models\Device;
-use App\Services\DeviceMonitor;
 use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\Schedule;
+use Illuminate\Support\Facades\DB;
 
-Artisan::command('devices:check', function () {
-    Device::query()->eachById(fn (Device $device) => CheckDeviceCommunication::dispatch($device->id));
-    $this->info('Checks queued. Run queue:work to process them.');
-})->purpose('Queue a communication check for every device');
+Artisan::command('device:heartbeat', function () {
+    $device = Device::where('name', 'Practice PLC')->firstOrFail();
+    $device->last_seen_at = now();
+    $device->save();
 
-Artisan::command('devices:heartbeat {device : Device ID}', function () {
-    $device = Device::find($this->argument('device'));
-    if (! $device) {
-        $this->error('Device not found.');
+    $this->info('Heartbeat saved. The queued check has not run yet.');
+})->purpose('Pretend our PLC just sent a heartbeat');
 
-        return 1;
-    }
-    app(DeviceMonitor::class)->heartbeat($device->id);
-    $this->info("Heartbeat received from {$device->name}.");
-})->purpose('Record one simulated heartbeat');
-
-Artisan::command('devices:simulate {device : Device ID} {--interval=5 : Seconds between heartbeats}', function () {
-    $device = Device::find($this->argument('device'));
-    $interval = filter_var($this->option('interval'), FILTER_VALIDATE_INT);
-    if (! $device || $interval === false || $interval < 1 || $interval > 60) {
-        $this->error('Use an existing device ID and an interval between 1 and 60 seconds.');
+Artisan::command('device:check', function () {
+    if (config('queue.default') !== 'database') {
+        $this->error('Set QUEUE_CONNECTION=database in .env, then run php artisan config:clear.');
 
         return 1;
     }
-    $this->info("Simulating {$device->name}. Ctrl+C stops heartbeats.");
-    while (true) {
-        app(DeviceMonitor::class)->heartbeat($device->id);
-        $this->line(now()->toTimeString().' heartbeat received');
-        sleep($interval);
-    }
-})->purpose('Simulate a device until interrupted');
 
-Schedule::command('devices:check')->everyTenSeconds()->withoutOverlapping();
+    $device = Device::where('name', 'Practice PLC')->firstOrFail();
+
+    // Dispatch means put the job on the queue. It does not perform the check here.
+    CheckDeviceCommunication::dispatch($device->id);
+
+    $this->info('Check queued. Run php artisan queue:work --once to perform it.');
+})->purpose('Put one device check on the database queue');
+
+Artisan::command('device:status', function () {
+    $device = Device::where('name', 'Practice PLC')->firstOrFail();
+
+    $this->line('Device: '.$device->name);
+    $this->line('Last heartbeat: '.($device->last_seen_at?->toDateTimeString() ?? 'none'));
+    $this->line('Last checked: '.($device->last_checked_at?->toDateTimeString() ?? 'never'));
+    $this->line('Last check result: '.$device->status);
+    $this->line('Jobs waiting or running: '.DB::table('jobs')->count());
+})->purpose('Show the saved result and queue size without running a check');

@@ -1,12 +1,14 @@
-# Laravel Device Communication Monitor
+# Learn Laravel queues: one device, one job
 
-A small SCADA-inspired learning project: simulate PLC/RTU heartbeats, queue communication checks, and watch devices go offline and recover. Laravel 13, PHP 8.4+, SQLite, database queues, and a Blade dashboard. No Redis, Node build, PLC hardware, or external service needed.
+A tiny terminal-only lesson for a junior developer. A pretend PLC sends a heartbeat (a message that says “I'm here”). Your job checks whether that heartbeat is more than 30 seconds old.
 
-This is a local simulation, not a production SCADA system or safety controller. There is no authentication or real device protocol integration. Bind the development server to localhost.
+**The lesson: putting a job on a queue does not run it. A worker runs it.**
 
-## Setup
+No hardware, dashboard, scheduler, Redis, or JavaScript setup. This is a sequential local exercise, not a real SCADA monitor.
 
-Install PHP with SQLite support and Composer, then:
+## 1. Set up once
+
+You need PHP 8.4+ with SQLite support, Composer, and Git.
 
 ```bash
 git clone https://github.com/Parrasite9/laravel-device-monitor.git
@@ -14,87 +16,110 @@ cd laravel-device-monitor
 composer setup
 ```
 
-The setup script installs dependencies, creates `.env` and a local SQLite database, runs migrations, and seeds three devices. `.env` and database files are ignored by Git. The default `QUEUE_CONNECTION=database` matters: `sync` runs jobs inline and defeats this exercise.
+Already cloned the earlier version? Run `git pull --ff-only`, then `composer setup`. Stop any old queue workers, simulators, and scheduler processes with Ctrl+C first. The old demo records remain in your database; this lesson only uses `Practice PLC`.
 
-Run these in four separate terminals from the project directory:
+Setup creates a local SQLite database and one practice device. Keep `QUEUE_CONNECTION=database` in `.env`. You do not need to start a web server.
 
-```bash
-# 1. Dashboard: http://127.0.0.1:8000
-php artisan serve --host=127.0.0.1
-```
+## 2. See the starting state
 
-```bash
-# 2. Execute pending jobs
-php artisan queue:work --tries=3 --timeout=10
-```
+Use one terminal for this entire lesson. Do not leave another worker running.
 
 ```bash
-# 3. Dispatch checks every ten seconds
-php artisan schedule:work
+php artisan device:status
 ```
 
-```bash
-# 4. Simulate a heartbeat every five seconds from device 1
-php artisan devices:simulate 1
-```
-
-Refresh the dashboard to see changes. Device IDs are shown in the table. Ctrl+C stops each process.
-
-## Your first exercise
-
-1. Start the four processes above. Refresh: Tank PLC becomes online.
-2. Stop only the simulator with Ctrl+C. Leave the worker and scheduler running.
-3. Wait 30–40 seconds, then refresh: Tank PLC becomes offline. Worker backlog can increase detection latency.
-4. Restart the simulator. Refresh: it is online again, with a recovery transition in history.
-5. Stop the queue worker while leaving the scheduler running. Refresh and watch pending jobs accumulate. Device check timestamps stop advancing.
-6. Restart the worker. It drains the backlog using current heartbeat facts, not old snapshots.
-
-Other devices go offline after their initial 30-second grace period unless you also simulate their heartbeats. An offline state means no heartbeat was received in time; it does not prove why communication stopped.
-
-## How it works
+On a fresh installation, expect:
 
 ```text
-Simulator → save last_seen_at → online transition
-Scheduler → devices:check → database jobs table → queue worker
-                                                   ↓
-                                      CheckDeviceCommunication
-                                                   ↓
-                                      latest heartbeat → state + event
+Device: Practice PLC
+Last heartbeat: none
+Last checked: never
+Last check result: unknown
+Jobs waiting or running: 0
 ```
 
-The scheduler decides **when to enqueue**. The worker **executes the job**. A job contains only the device ID. Heartbeats update synchronously so queued checks see the latest receipt time. Checks and heartbeats serialize database writes inside transactions; a state change and its event commit together. Repeated checks do not create repeated offline events. A never-seen device stays unknown during its grace period.
+`unknown` means we have no heartbeat to evaluate. The result is a saved observation, not a continuously updating connection status.
 
-The queue job allows three attempts with 2- and 5-second retry backoffs and a 10-second timeout. Schedule overlap prevention protects dispatch, not a complete worker backlog. This intentionally small project enqueues a check per device every ten seconds; production monitoring would also need bounded backlog, retention, authentication, and monitor-health visibility.
-
-## Useful commands
+## 3. Put a check on the queue
 
 ```bash
-php artisan devices:heartbeat 1             # One heartbeat
-php artisan devices:check                   # Queue checks once
-php artisan queue:work --stop-when-empty    # Drain the queue, then exit
-php artisan schedule:list                  # Inspect the schedule
-php artisan queue:failed                   # Inspect exhausted jobs
-php artisan queue:retry JOB_UUID           # Retry a failed job
-vendor/bin/phpunit                         # Behavioral tests
-vendor/bin/pint --test                     # Formatting check
+php artisan device:heartbeat
+php artisan device:check
+php artisan device:status
 ```
 
-## Learn retries deliberately
+The heartbeat has a timestamp, but **Last checked is still never** and **Jobs waiting or running is 1**. Nothing is broken: there is no worker running yet.
 
-Temporarily add `throw new \RuntimeException('Practice failure');` at the start of the job's `handle()` method. Restart the worker (workers keep loaded code), dispatch checks, and observe retries and eventual failed jobs. Remove the exception, restart the worker, and retry one failed job by UUID. Do this only in your local learning copy.
+Open `routes/console.php` and find:
 
-## Suggested reading order
+```php
+CheckDeviceCommunication::dispatch($device->id);
+```
 
-1. `routes/console.php` — simulator, dispatch command, scheduler.
-2. `app/Jobs/CheckDeviceCommunication.php` — queued work and retry settings.
-3. `app/Services/DeviceMonitor.php` — current-state checks and atomic transitions.
-4. `tests/Feature/DeviceMonitorTest.php` — timeout boundary, recovery, duplicates, dispatch, and invalid inputs.
-5. `routes/web.php` and `resources/views/dashboard.blade.php` — read-only dashboard.
+`dispatch()` puts a job in the database's `jobs` table. The ID tells the job which device to check.
 
-Next exercises: add per-device timeout editing, a notification job on an offline transition, or a CSV history export. Keep alarm acknowledgement separate from communication recovery.
+## 4. Run exactly one job
 
-Official references: [Laravel queues](https://laravel.com/docs/13.x/queues) and [task scheduling](https://laravel.com/docs/13.x/scheduling).
+```bash
+php artisan queue:work --once --tries=1
+php artisan device:status
+```
 
-## License
+The worker prints `RUNNING` and `DONE`, then exits. The queue size becomes 0 and Last checked gains a timestamp.
 
-MIT. Based on the MIT-licensed Laravel application skeleton.
+The result is `online` if you ran the job within 30 seconds of the heartbeat. If you took longer while reading, `offline` is correct! To see online, run these together:
+
+```bash
+php artisan device:heartbeat
+php artisan device:check
+php artisan queue:work --once --tries=1
+php artisan device:status
+```
+
+Open `app/Jobs/CheckDeviceCommunication.php`. Its `handle()` method is the work that the worker executes. `ShouldQueue` tells Laravel this job belongs on a queue.
+
+## 5. Simulate lost communication
+
+Wait at least 31 seconds without sending a heartbeat. Then:
+
+```bash
+php artisan device:check
+php artisan queue:work --once --tries=1
+php artisan device:status
+```
+
+Expect `offline`. Send a fresh heartbeat and repeat those three commands to see `online` again.
+
+A missing heartbeat only tells us communication was not observed recently. We are not diagnosing a real PLC failure.
+
+## The three pieces
+
+| Piece | In this lesson | Responsibility |
+| --- | --- | --- |
+| Dispatch | `php artisan device:check` | Put work on the queue |
+| Queue | SQLite `jobs` table | Hold work until a worker takes it |
+| Worker | `php artisan queue:work --once --tries=1` | Run one job's `handle()` method |
+
+Read just two files first: `routes/console.php` and `app/Jobs/CheckDeviceCommunication.php`. `app/Models/Device.php` connects PHP to the device row in the database. Everything else can wait.
+
+## If something seems broken
+
+- **Job waiting, result unchanged:** run the worker. Queuing is not completion.
+- **Result offline after a fresh heartbeat:** more than 30 seconds may have passed before the worker checked it. Send another heartbeat and check again.
+- **Worker waits without exiting:** `--once` can wait when the queue is empty. Press Ctrl+C, dispatch a check, then run it again.
+- **Jobs disappear immediately:** stop any other running workers. The lesson needs you to start the worker manually.
+- **Queue configuration error:** set `QUEUE_CONNECTION=database` in `.env`, then run `php artisan config:clear`.
+- **Missing table or practice device:** run `php artisan migrate --seed`.
+- **Worker prints FAIL:** run `php artisan queue:failed` and read the error in `storage/logs/laravel.log`.
+
+## Optional: your first code change
+
+Change the timeout in `handle()` from 30 seconds to 10 seconds. Repeat the outage exercise, waiting 11 seconds. The next `--once` command starts a fresh worker and loads your edited code.
+
+Automated checks: `composer test`. The main test uses a real database queue and worker to prove that dispatching alone does not update the result.
+
+Later lessons can add automatic checks and retries. For now, focus on dispatch → queue → worker → saved result.
+
+Reference: [Laravel queue documentation](https://laravel.com/docs/13.x/queues).
+
+MIT license. Based on the Laravel application skeleton. The original larger demo remains in Git history; its event table and timeout column remain in the migration for existing installations but are unused by this lesson.
