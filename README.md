@@ -1,10 +1,10 @@
 # Learn Laravel queues: one device, one job
 
-A tiny terminal-only lesson for a junior developer. A pretend PLC sends a heartbeat (a message that says “I'm here”). Your job checks whether that heartbeat is more than 30 seconds old.
+A tiny lesson with an optional live visualizer for a junior developer. A pretend PLC sends a heartbeat (a message that says “I'm here”). Your job checks whether that heartbeat is more than 30 seconds old.
 
 **The lesson: putting a job on a queue does not run it. A worker runs it.**
 
-No hardware, dashboard, scheduler, Redis, or JavaScript setup. This is a sequential local exercise, not a real SCADA monitor.
+No hardware, scheduler, Redis, or JavaScript build setup. This is a sequential local exercise, not a real SCADA monitor.
 
 ## 1. Set up once
 
@@ -19,6 +19,20 @@ composer setup
 Already cloned the earlier version? Run `git pull --ff-only`, then `composer setup`. Stop any old queue workers, simulators, and scheduler processes with Ctrl+C first. The old demo records remain in your database; this lesson only uses `Practice PLC`.
 
 Setup creates a local SQLite database and one practice device. Keep `QUEUE_CONNECTION=database` in `.env`. You do not need to start a web server.
+
+## Optional: watch it in your browser
+
+Start the local web server in a separate terminal:
+
+```bash
+php artisan serve --host=127.0.0.1
+```
+
+Open **http://127.0.0.1:8000**. Leave it open while you follow the commands below in another terminal. The page refreshes its data every second without reloading.
+
+You will see heartbeat age, waiting and reserved jobs, failed jobs, and the last saved check result. Dispatch a check with no worker running to see it wait. Start the worker to see the queue empty and result update. The visualizer only observes; it does not start workers or send heartbeats.
+
+Keep this unauthenticated learning app on localhost. It is not intended for public hosting. JavaScript must be enabled; no npm install or frontend build is needed.
 
 ## 2. See the starting state
 
