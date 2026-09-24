@@ -11,6 +11,7 @@
 <header><small>DEVICE MONITOR / QUEUE LAB</small><h1>Watch your queue work.</h1><p>Send a heartbeat. Queue a check. Start a worker.</p><p id="connection" role="status">Connecting to your local app…</p><button id="toggle" type="button">Pause live updates</button><noscript><p>Enable JavaScript, or use php artisan device:status in your terminal.</p></noscript></header>
 <p id="notice" role="status" hidden></p>
 <main>
+<section><h2>Start with lesson 01</h2><p>This is your coding starter. Open <strong>lessons/01-write-the-check.md</strong> in Cursor. The check and queue wiring are intentionally unfinished. Complete lessons 01–03 before using the queued flow below.</p><p class="muted">Existing database values may be from an earlier run. This page observes data; it does not mark lessons complete.</p></section>
 <div class="flow">
 <div><small>01 / DEVICE</small><h2>Practice PLC</h2><div class="metric" id="age">—</div><p class="muted">Since last heartbeat</p><small id="heartbeat">Waiting for data</small></div>
 <span class="arrow" aria-hidden="true">→</span>

@@ -2,30 +2,21 @@
 
 namespace App\Jobs;
 
-use App\Models\Device;
+use App\DeviceCheck;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 
-class CheckDeviceCommunication implements ShouldQueue
+// TODO lesson 02: make this class implement ShouldQueue.
+class CheckDeviceCommunication
 {
     use Queueable;
 
+    // Store only the ID: the worker will read the current device later.
     public function __construct(public int $deviceId) {}
 
     public function handle(): void
     {
-        // This method runs when the worker picks up the job, not when we dispatch it.
-        $device = Device::findOrFail($this->deviceId);
-
-        if ($device->last_seen_at === null) {
-            $device->status = 'unknown';
-        } elseif ($device->last_seen_at->addSeconds(30)->isPast()) {
-            $device->status = 'offline';
-        } else {
-            $device->status = 'online';
-        }
-
-        $device->last_checked_at = now();
-        $device->save();
+        // TODO lesson 02: call DeviceCheck::run through a new DeviceCheck instance.
+        throw new \LogicException('Lesson 02: write the job in app/Jobs/CheckDeviceCommunication.php.');
     }
 }

@@ -1,5 +1,6 @@
 <?php
 
+use App\DeviceCheck;
 use App\Jobs\CheckDeviceCommunication;
 use App\Models\Device;
 use Illuminate\Support\Facades\Artisan;
@@ -23,8 +24,8 @@ Artisan::command('device:check', function () {
     $device = Device::where('name', 'Practice PLC')->firstOrFail();
 
     // Dispatch means put the job on the queue. It does not perform the check here.
-    CheckDeviceCommunication::dispatch($device->id);
-
+    // TODO lesson 03: dispatch CheckDeviceCommunication with this device's ID.
+    throw new LogicException('Lesson 03: write the dispatch line in routes/console.php.');
     $this->info('Check queued. Run php artisan queue:work --once to perform it.');
 })->purpose('Put one device check on the database queue');
 
@@ -37,3 +38,9 @@ Artisan::command('device:status', function () {
     $this->line('Last check result: '.$device->status);
     $this->line('Jobs waiting or running: '.DB::table('jobs')->count());
 })->purpose('Show the saved result and queue size without running a check');
+
+Artisan::command('device:check-now', function () {
+    $device = Device::where('name', 'Practice PLC')->firstOrFail();
+    (new DeviceCheck)->run($device->id);
+    $this->info('Check performed immediately, without a queue.');
+})->purpose('Lesson 01: run your check in this process');

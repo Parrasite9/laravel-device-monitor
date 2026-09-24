@@ -1,139 +1,39 @@
-# Learn Laravel queues: one device, one job
+# Build your first Laravel queue
 
-A tiny lesson with an optional live visualizer for a junior developer. A pretend PLC sends a heartbeat (a message that says “I'm here”). Your job checks whether that heartbeat is more than 30 seconds old.
+**You write the code. This starter deliberately leaves the important parts unfinished.**
 
-**The lesson: putting a job on a queue does not run it. A worker runs it.**
+Start here: **[Lesson 01 — Write the check](lessons/01-write-the-check.md)**.
 
-No hardware, scheduler, Redis, or JavaScript build setup. This is a sequential local exercise, not a real SCADA monitor.
+## Setup once
 
-## 1. Set up once
-
-You need PHP 8.4+ with SQLite support, Composer, and Git.
+PHP 8.4+, Composer, SQLite support. In the project folder:
 
 ```bash
-git clone https://github.com/Parrasite9/laravel-device-monitor.git
-cd laravel-device-monitor
 composer setup
-```
-
-Already cloned the earlier version? Run `git pull --ff-only`, then `composer setup`. Stop any old queue workers, simulators, and scheduler processes with Ctrl+C first. The old demo records remain in your database; this lesson only uses `Practice PLC`.
-
-Setup creates a local SQLite database and one practice device. Keep `QUEUE_CONNECTION=database` in `.env`. You do not need to start a web server.
-
-## Optional: watch it in your browser
-
-Start the local web server in a separate terminal:
-
-```bash
 php artisan serve --host=127.0.0.1
 ```
 
-Open **http://127.0.0.1:8000**. Leave it open while you follow the commands below in another terminal. The page refreshes its data every second without reloading.
+Open http://127.0.0.1:8000 for the visualizer. Keep the server terminal open; use another terminal for exercises. No npm or Redis required.
 
-You will see heartbeat age, waiting and reserved jobs, failed jobs, and the last saved check result. Dispatch a check with no worker running to see it wait. Start the worker to see the queue empty and result update. The visualizer only observes; it does not start workers or send heartbeats.
+Updating an earlier clone? Save your edits, pull the changes, run `composer setup`, and stop old workers/schedulers. Existing local data stays; it may show old results.
 
-Keep this unauthenticated learning app on localhost. It is not intended for public hosting. JavaScript must be enabled; no npm install or frontend build is needed.
+## Work through one lesson at a time
 
-## 2. See the starting state
+| Lesson | What you write |
+| --- | --- |
+| [01](lessons/01-write-the-check.md) | The actual device-check logic |
+| [02](lessons/02-write-the-job.md) | A queued job that calls your code |
+| [03](lessons/03-connect-the-queue.md) | Queue configuration and dispatch |
+| [04](lessons/04-follow-the-worker.md) | Named queue routing and worker execution |
+| [05](lessons/05-fail-and-retry.md) | Retry, backoff, and timeout settings |
+| [06](lessons/06-reliable-and-recurring.md) | A recurring schedule and repeat-safe work |
 
-Use one terminal for this entire lesson. Do not leave another worker running.
+The visualizer, device model, database, and heartbeat simulator are supplied scaffolding. Your code lives in `app/DeviceCheck.php`, `app/Jobs/CheckDeviceCommunication.php`, and `routes/console.php`.
 
-```bash
-php artisan device:status
-```
+**TODO exceptions are intentional.** Each lesson tells you what to replace and how to check it. `composer test` checks the supplied scaffolding only. Lesson tests are separate and fail until you implement the exercises. Passing scaffolding tests does not mean you finished the course.
 
-On a fresh installation, expect:
+Completed code is in [lessons/answers](lessons/answers/README.md). Try the exercise before opening its answer. The prior working demo is preserved at [commit 5a24580](https://github.com/Parrasite9/laravel-device-monitor/tree/5a24580).
 
-```text
-Device: Practice PLC
-Last heartbeat: none
-Last checked: never
-Last check result: unknown
-Jobs waiting or running: 0
-```
+This is a local simulated SCADA exercise, not a real control system. Keep the unauthenticated visualizer on localhost. Old demo event-table/timeout columns remain for migration compatibility and are unused.
 
-`unknown` means we have no heartbeat to evaluate. The result is a saved observation, not a continuously updating connection status.
-
-## 3. Put a check on the queue
-
-```bash
-php artisan device:heartbeat
-php artisan device:check
-php artisan device:status
-```
-
-The heartbeat has a timestamp, but **Last checked is still never** and **Jobs waiting or running is 1**. Nothing is broken: there is no worker running yet.
-
-Open `routes/console.php` and find:
-
-```php
-CheckDeviceCommunication::dispatch($device->id);
-```
-
-`dispatch()` puts a job in the database's `jobs` table. The ID tells the job which device to check.
-
-## 4. Run exactly one job
-
-```bash
-php artisan queue:work --once --tries=1
-php artisan device:status
-```
-
-The worker prints `RUNNING` and `DONE`, then exits. The queue size becomes 0 and Last checked gains a timestamp.
-
-The result is `online` if you ran the job within 30 seconds of the heartbeat. If you took longer while reading, `offline` is correct! To see online, run these together:
-
-```bash
-php artisan device:heartbeat
-php artisan device:check
-php artisan queue:work --once --tries=1
-php artisan device:status
-```
-
-Open `app/Jobs/CheckDeviceCommunication.php`. Its `handle()` method is the work that the worker executes. `ShouldQueue` tells Laravel this job belongs on a queue.
-
-## 5. Simulate lost communication
-
-Wait at least 31 seconds without sending a heartbeat. Then:
-
-```bash
-php artisan device:check
-php artisan queue:work --once --tries=1
-php artisan device:status
-```
-
-Expect `offline`. Send a fresh heartbeat and repeat those three commands to see `online` again.
-
-A missing heartbeat only tells us communication was not observed recently. We are not diagnosing a real PLC failure.
-
-## The three pieces
-
-| Piece | In this lesson | Responsibility |
-| --- | --- | --- |
-| Dispatch | `php artisan device:check` | Put work on the queue |
-| Queue | SQLite `jobs` table | Hold work until a worker takes it |
-| Worker | `php artisan queue:work --once --tries=1` | Run one job's `handle()` method |
-
-Read just two files first: `routes/console.php` and `app/Jobs/CheckDeviceCommunication.php`. `app/Models/Device.php` connects PHP to the device row in the database. Everything else can wait.
-
-## If something seems broken
-
-- **Job waiting, result unchanged:** run the worker. Queuing is not completion.
-- **Result offline after a fresh heartbeat:** more than 30 seconds may have passed before the worker checked it. Send another heartbeat and check again.
-- **Worker waits without exiting:** `--once` can wait when the queue is empty. Press Ctrl+C, dispatch a check, then run it again.
-- **Jobs disappear immediately:** stop any other running workers. The lesson needs you to start the worker manually.
-- **Queue configuration error:** set `QUEUE_CONNECTION=database` in `.env`, then run `php artisan config:clear`.
-- **Missing table or practice device:** run `php artisan migrate --seed`.
-- **Worker prints FAIL:** run `php artisan queue:failed` and read the error in `storage/logs/laravel.log`.
-
-## Optional: your first code change
-
-Change the timeout in `handle()` from 30 seconds to 10 seconds. Repeat the outage exercise, waiting 11 seconds. The next `--once` command starts a fresh worker and loads your edited code.
-
-Automated checks: `composer test`. The main test uses a real database queue and worker to prove that dispatching alone does not update the result.
-
-Later lessons can add automatic checks and retries. For now, focus on dispatch → queue → worker → saved result.
-
-Reference: [Laravel queue documentation](https://laravel.com/docs/13.x/queues).
-
-MIT license. Based on the Laravel application skeleton. The original larger demo remains in Git history; its event table and timeout column remain in the migration for existing installations but are unused by this lesson.
+MIT license. [Laravel queue documentation](https://laravel.com/docs/13.x/queues).

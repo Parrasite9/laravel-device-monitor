@@ -1,6 +1,6 @@
 <?php
 
-namespace Tests\Feature;
+namespace Tests\Lessons;
 
 use App\Jobs\CheckDeviceCommunication;
 use App\Models\Device;

@@ -10,23 +10,13 @@ class VisualizerTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_visualizer_observes_queue_without_processing_it(): void
+    public function test_visualizer_loads_and_reads_without_mutating_device(): void
     {
-        config(['queue.default' => 'database']);
-        $this->freezeTime();
         $this->seed();
-        $this->get('/')->assertOk()->assertSee('Watch your queue work.');
-        $this->artisan('device:heartbeat')->assertSuccessful();
-        $this->artisan('device:check')->assertSuccessful();
-        $this->getJson('/queue-status')->assertOk()
-            ->assertJsonPath('waiting', 1)->assertJsonPath('reserved', 0)
-            ->assertJsonPath('device.result', 'unknown')->assertJsonPath('device.checked', null)
-            ->assertJsonCount(1, 'jobs');
-        $this->assertDatabaseCount('jobs', 1);
-        $this->artisan('queue:work', ['--once' => true, '--tries' => 1])->assertSuccessful();
-        $this->getJson('/queue-status')->assertOk()
-            ->assertJsonPath('waiting', 0)->assertJsonPath('device.result', 'online')
-            ->assertJsonPath('device.checked', now()->toIso8601String());
+        $this->get('/')->assertOk()->assertSee('Watch your queue work.')->assertSee('Start with lesson 01');
+        $this->getJson('/queue-status')->assertOk()->assertJsonPath('device.result', 'unknown');
+        $this->assertDatabaseHas('devices', ['last_checked_at' => null]);
+        $this->assertDatabaseCount('jobs', 0);
     }
 
     public function test_missing_device_and_reserved_jobs_are_reported_honestly(): void
